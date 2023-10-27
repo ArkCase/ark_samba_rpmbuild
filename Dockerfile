@@ -5,12 +5,15 @@ ARG ARCH="x86_64"
 ARG OS="linux"
 ARG VER="4.14.5-10"
 ARG PKG="samba"
-ARG ROCKY_VERSION="8.5"
+
+ARG BASE_REPO="rockylinux"
+ARG BASE_VER="8.5"
+ARG BASE_IMG="${BASE_REPO}:${BASE_VER}"
 
 #
 # To build the RPMs
 #
-FROM rockylinux:${ROCKY_VERSION} as src
+FROM "${BASE_IMG}"
 
 #
 # Basic Parameters
@@ -19,7 +22,7 @@ ARG ARCH
 ARG OS
 ARG VER
 ARG PKG
-ARG ROCKY_VERSION
+ARG BASE_VER
 
 #
 # Some important labels
@@ -49,10 +52,10 @@ RUN yum-config-manager \
 WORKDIR /root/rpmbuild
 RUN yum -y install wget
 # First try the main repository
-ENV REPO="https://dl.rockylinux.org/pub/rocky/${ROCKY_VERSION}/BaseOS/source/tree/Packages"
+ENV REPO="https://dl.rockylinux.org/pub/rocky/${BASE_VER}/BaseOS/source/tree/Packages"
 RUN wget --recursive --level 2 --no-parent --no-directories "${REPO}" --directory-prefix=. --accept "samba-*.src.rpm" --accept "libldb-*.src.rpm" || true
 # Now try the vault repository
-ENV REPO="https://dl.rockylinux.org/vault/rocky/${ROCKY_VERSION}/BaseOS/source/tree/Packages"
+ENV REPO="https://dl.rockylinux.org/vault/rocky/${BASE_VER}/BaseOS/source/tree/Packages"
 RUN wget --recursive --level 2 --no-parent --no-directories "${REPO}" --directory-prefix=. --accept "samba-*.src.rpm" --accept "libldb-*.src.rpm" || true
 ENV REPO=""
 COPY find-latest-srpm .
