@@ -1,14 +1,15 @@
 #
 # Basic Parameters
 #
+ARG PUBLIC_REGISTRY="public.ecr.aws"
 ARG ARCH="x86_64"
 ARG OS="linux"
-ARG VER="4.14.5"
+ARG VER="4.18.6"
 ARG PKG="samba"
 
-ARG BASE_REPO="rockylinux"
-ARG BASE_VER="8.5"
-ARG BASE_IMG="${BASE_REPO}:${BASE_VER}"
+ARG BASE_REPO="arkcase/base"
+ARG BASE_VER="8"
+ARG BASE_IMG="${PUBLIC_REGISTRY}/${BASE_REPO}:${BASE_VER}"
 
 #
 # To build the RPMs
