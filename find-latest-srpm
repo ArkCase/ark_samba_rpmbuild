@@ -2,7 +2,8 @@
 
 [ ${#} -lt 1 ] && echo -e "usage: ${BASH_ARGV0} rpm1 [rpm2 rpm3 ... rpmN]" && exit 1
 
-list_versions() {
+list_versions()
+{
 	for n in "${@}" ; do
 		[ -f "${n}" ] || continue
 		/usr/bin/rpm -qp --queryformat "%{NAME}/%{VERSION}/%{RELEASE}=${n}\n" "${n}"

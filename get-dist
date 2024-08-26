@@ -1,15 +1,18 @@
 #!/bin/bash
 
-say() {
+say()
+{
 	echo -e "${@}"
 }
 
-fail() {
+fail()
+{
 	say "${@}" 1>&2
 	exit ${EXIT_CODE:-1}
 }
 
-usage() {
+usage()
+{
 	fail "usage: ${BASH_ARGV0} rpm1"
 }
 
