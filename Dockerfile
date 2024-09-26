@@ -13,7 +13,7 @@ ARG BASE_IMG="${BASE_REPO}:${BASE_VER}"
 #
 # To build the RPMs
 #
-FROM "${BASE_IMG}"
+FROM "${BASE_IMG}" AS builder
 
 #
 # Basic Parameters
@@ -29,7 +29,7 @@ ARG BASE_VER
 #
 LABEL ORG="ArkCase LLC"
 LABEL MAINTAINER="ArkCase Support <support@arkcase.com>"
-LABEL APP="Samba"
+LABEL APP="Samba RPM Builder"
 LABEL VERSION="${VER}"
 
 #
@@ -104,3 +104,10 @@ RUN SAMBA_SRPM="$( ./find-latest-srpm samba-*.src.rpm )" && \
     rpmbuild --clean --define "dist .${DIST}" --define "${DIST} 1" --with dc --rebuild "${SAMBA_SRPM}"
 RUN rm -rf RPMS/repodata
 RUN createrepo RPMS
+
+#
+# Create an empty image just with the RPMS directory
+#
+FROM scratch
+
+COPY --from=builder /root/rpmbuild/RPMS /rpm
