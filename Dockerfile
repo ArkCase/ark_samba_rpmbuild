@@ -1,14 +1,17 @@
 #
 # Basic Parameters
 #
+ARG PUBLIC_REGISTRY="public.ecr.aws"
 ARG ARCH="x86_64"
 ARG OS="linux"
-ARG VER="4.14.5"
+ARG VER="4.19.4"
 ARG PKG="samba"
 
-ARG BASE_REPO="rockylinux"
-ARG BASE_VER="8.5"
-ARG BASE_IMG="${BASE_REPO}:${BASE_VER}"
+ARG BASE_REGISTRY="${PUBLIC_REGISTRY}"
+ARG BASE_REPO="arkcase/base"
+ARG BASE_VER="8"
+ARG BASE_VER_PFX=""
+ARG BASE_IMG="${BASE_REGISTRY}/${BASE_REPO}:${BASE_VER_PFX}${BASE_VER}"
 
 #
 # To build the RPMs
@@ -77,7 +80,7 @@ RUN LIBLDB_SRPM="$( ./find-latest-srpm libldb-*.src.rpm )" && \
 # Create a repository that facilitates installation later
 #
 RUN yum -y install createrepo
-RUN createrepo RPMS
+RUN mkdir -p RPMS && createrepo RPMS
 COPY arkcase.repo /etc/yum.repos.d
 RUN ln -svf $(readlink -f RPMS) /rpm
 
@@ -103,7 +106,7 @@ RUN SAMBA_SRPM="$( ./find-latest-srpm samba-*.src.rpm )" && \
     if [ -z "${DIST}" ] ; then echo "Failed to identify the distribution for the SRPM [${SAMBA_SRPM}]" ; exit 1 ; fi && \
     rpmbuild --clean --define "dist .${DIST}" --define "${DIST} 1" --with dc --rebuild "${SAMBA_SRPM}"
 RUN rm -rf RPMS/repodata
-RUN createrepo RPMS
+RUN mkdir -p RPMS && createrepo RPMS
 
 #
 # Create an empty image just with the RPMS directory
