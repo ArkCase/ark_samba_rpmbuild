@@ -1,20 +1,19 @@
 #
 # Basic Parameters
 #
-ARG PUBLIC_REGISTRY="public.ecr.aws"
 ARG ARCH="x86_64"
 ARG OS="linux"
-ARG VER="4.18.6"
-ARG PKG="samba"
+ARG VER="4.19.4"
+ARG PKG="samba-rpms"
 
-ARG BASE_REPO="arkcase/base"
-ARG BASE_VER="8"
-ARG BASE_IMG="${PUBLIC_REGISTRY}/${BASE_REPO}:${BASE_VER}"
+ARG BASE_REPO="rockylinux"
+ARG BASE_VER="8.9"
+ARG BASE_IMG="${BASE_REPO}:${BASE_VER}"
 
 #
 # To build the RPMs
 #
-FROM "${BASE_IMG}"
+FROM "${BASE_IMG}" AS builder
 
 #
 # Basic Parameters
@@ -30,7 +29,7 @@ ARG BASE_VER
 #
 LABEL ORG="ArkCase LLC"
 LABEL MAINTAINER="ArkCase Support <support@arkcase.com>"
-LABEL APP="Samba"
+LABEL APP="Samba RPM Builder"
 LABEL VERSION="${VER}"
 
 #
@@ -44,8 +43,8 @@ RUN yum -y install yum-utils rpm-build which
 # Enable the required repositories
 #
 RUN yum-config-manager \
-		--enable devel \
-		--enable powertools
+        --enable devel \
+        --enable powertools
 
 #
 # Download the requisite SRPMs
@@ -85,23 +84,52 @@ RUN ln -svf $(readlink -f RPMS) /rpm
 RUN yum -y install python3-ldb python3-ldb-devel
 
 #
+# Need an updated python3-pyasn1
+#
+ENV PY_ASN_SRPM="python-pyasn1-0.4.8-6.el9.src.rpm"
+ENV PY_ASN_SRC="https://dl.rockylinux.org/pub/rocky/9/AppStream/source/tree/Packages/p/${PY_ASN_SRPM}"
+RUN curl -fsSL -o "${PY_ASN_SRPM}" "${PY_ASN_SRC}" && \
+    yum-builddep -y "${PY_ASN_SRPM}" && \
+    DIST="el8" && \
+    rpmbuild --clean --define "dist .${DIST}" --rebuild "${PY_ASN_SRPM}"
+
+#
+# Need an updated krb5
+#
+ENV KRB5_SRPM="krb5-1.21.1-8.el9_6.src.rpm"
+ENV KRB5_SRC="https://dl.rockylinux.org/pub/rocky/9/BaseOS/source/tree/Packages/k/${KRB5_SRPM}"
+RUN curl -fsSL -o "${KRB5_SRPM}" "${KRB5_SRC}" && \
+    yum-builddep -y "${KRB5_SRPM}" && \
+    DIST="el8" && \
+    rpmbuild --clean --define "dist .${DIST}" --rebuild "${KRB5_SRPM}"
+
+#
 # Build Samba now
 #
 RUN SAMBA_SRPM="$( ./find-latest-srpm samba-*.src.rpm )" && \
     if [ -z "${SAMBA_SRPM}" ] ; then echo "No Samba SRPM was found" ; exit 1 ; fi && \
     yum-builddep -y "${SAMBA_SRPM}" && \
     yum -y install \
-		bind \
-		krb5-server \
-		ldb-tools \
-		python3-cryptography \
-		python3-iso8601 \
-		python3-markdown \
-		python3-pyasn1 \
-		python3-setproctitle \
-		tdb-tools && \
+        bind \
+        krb5-server \
+        ldb-tools \
+        python3-cryptography \
+        python3-iso8601 \
+        python3-markdown \
+        ./RPMS/noarch/python3-pyasn1-0.4.8-6.el8.noarch.rpm \
+        ./RPMS/noarch/python3-pyasn1-modules-0.4.8-6.el8.noarch.rpm \
+        python3-setproctitle \
+        tdb-tools \
+      && \
     DIST="$( ./get-dist "${SAMBA_SRPM}" )" && \
     if [ -z "${DIST}" ] ; then echo "Failed to identify the distribution for the SRPM [${SAMBA_SRPM}]" ; exit 1 ; fi && \
     rpmbuild --clean --define "dist .${DIST}" --define "${DIST} 1" --with dc --rebuild "${SAMBA_SRPM}"
 RUN rm -rf RPMS/repodata
 RUN createrepo RPMS
+
+#
+# Create an empty image just with the RPMS directory
+#
+FROM scratch
+
+COPY --from=builder /root/rpmbuild/RPMS /rpm
