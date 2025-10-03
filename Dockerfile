@@ -3,12 +3,14 @@
 #
 ARG ARCH="x86_64"
 ARG OS="linux"
-ARG VER="4.14.5"
+ARG VER="4.16.4"
 ARG PKG="samba"
 
 ARG BASE_REPO="rockylinux"
-ARG BASE_VER="8.5"
+ARG BASE_VER="8.7"
 ARG BASE_IMG="${BASE_REPO}:${BASE_VER}"
+
+ARG UPSTREAM_VER="9.1"
 
 #
 # To build the RPMs
@@ -51,15 +53,21 @@ RUN yum-config-manager \
 #
 WORKDIR /root/rpmbuild
 RUN yum -y install wget
+
 # First try the main repository
 ENV REPO="https://dl.rockylinux.org/pub/rocky/${BASE_VER}/BaseOS/source/tree/Packages"
 RUN wget --recursive --level 2 --no-parent --no-directories "${REPO}" --directory-prefix=. --accept "samba-*.src.rpm" --accept "libldb-*.src.rpm" || true
+ENV REPO="https://dl.rockylinux.org/pub/rocky/${UPSTREAM_VER}/BaseOS/source/tree/Packages"
+RUN wget --recursive --level 2 --no-parent --no-directories "${REPO}" --directory-prefix=. --accept "krb5-*.src.rpm" || true
+
 # Now try the vault repository
 ENV REPO="https://dl.rockylinux.org/vault/rocky/${BASE_VER}/BaseOS/source/tree/Packages"
 RUN wget --recursive --level 2 --no-parent --no-directories "${REPO}" --directory-prefix=. --accept "samba-*.src.rpm" --accept "libldb-*.src.rpm" || true
+ENV REPO="https://dl.rockylinux.org/vault/rocky/${UPSTREAM_VER}/BaseOS/source/tree/Packages"
+RUN wget --recursive --level 2 --no-parent --no-directories "${REPO}" --directory-prefix=. --accept "krb5-*.src.rpm" || true
 ENV REPO=""
-COPY find-latest-srpm .
-COPY get-dist .
+
+COPY find-latest-srpm get-dist .
 
 #
 # We have the RPMs available, now find the latest ones and build them
@@ -72,6 +80,13 @@ RUN LIBLDB_SRPM="$( ./find-latest-srpm libldb-*.src.rpm )" && \
     if [ -z "${LIBLDB_SRPM}" ] ; then echo "No libldb SRPM was found" ; exit 1 ; fi && \
     yum-builddep -y "${LIBLDB_SRPM}" && \
     rpmbuild --clean --rebuild "${LIBLDB_SRPM}"
+
+RUN KRB5_SRPM="$( ./find-latest-srpm krb5-*.src.rpm )" && \
+    SAMBA_SRPM="$( ./find-latest-srpm samba-*.src.rpm )" && \
+    DIST="$( ./get-dist "${SAMBA_SRPM}" )" && \
+    if [ -z "${KRB5_SRPM}" ] ; then echo "No krb5 SRPM was found" ; exit 1 ; fi && \
+    yum-builddep -y "${KRB5_SRPM}" && \
+    rpmbuild --clean --define "dist .${DIST}" --define "${DIST} 1" --rebuild --nodeps "${KRB5_SRPM}"
 
 #
 # Create a repository that facilitates installation later
@@ -101,7 +116,7 @@ RUN SAMBA_SRPM="$( ./find-latest-srpm samba-*.src.rpm )" && \
 		tdb-tools && \
     DIST="$( ./get-dist "${SAMBA_SRPM}" )" && \
     if [ -z "${DIST}" ] ; then echo "Failed to identify the distribution for the SRPM [${SAMBA_SRPM}]" ; exit 1 ; fi && \
-    rpmbuild --clean --define "dist .${DIST}" --define "${DIST} 1" --with dc --rebuild "${SAMBA_SRPM}"
+    rpmbuild --clean --define "dist .${DIST}" --define "${DIST} 1" --with dc --rebuild --nodeps "${SAMBA_SRPM}"
 RUN rm -rf RPMS/repodata
 RUN createrepo RPMS
 
