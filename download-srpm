@@ -1,0 +1,32 @@
+#!/bin/bash
+
+# ${0} VERSION[/Type] match1 [ match2 match3 ... matchN ]
+
+set -euo pipefail
+
+VERSION="${1}"
+[[ "${VERSION}" =~ ^[^/]+/[^/]+$ ]] || VERSION+="/BaseOS"
+shift
+
+for MATCH in "${@}" ; do
+	
+	FOUND="false"
+	for REPO in pub vault ; do
+		URL="https://dl.rockylinux.org/${REPO}/rocky/${VERSION}/source/tree/Packages/${MATCH:0:1}/"
+		wget \
+			--recursive \
+			--level 2 \
+			--no-parent \
+			--no-directories \
+			"${URL}" \
+			--directory-prefix=. \
+			--accept "${MATCH}" || continue
+		FOUND="true"
+		break
+	done
+
+	if ! "${FOUND}" ; then
+		echo -e "ERROR: Could not find a match for [${MATCH}]"
+		exit 1
+	fi
+done
