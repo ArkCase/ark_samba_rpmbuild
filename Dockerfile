@@ -7,8 +7,10 @@ ARG VER="4.19.4"
 ARG PKG="samba-rpms"
 
 ARG BASE_REPO="rockylinux"
-ARG BASE_VER="8.9"
+ARG BASE_VER="8"
 ARG BASE_IMG="${BASE_REPO}:${BASE_VER}"
+
+ARG UPSTREAM_VER="9.1"
 
 #
 # To build the RPMs
@@ -23,6 +25,7 @@ ARG OS
 ARG VER
 ARG PKG
 ARG BASE_VER
+ARG UPSTREAM_VER
 
 #
 # Some important labels
@@ -47,28 +50,26 @@ RUN yum-config-manager \
         --enable powertools
 
 #
+# Final tools needed
+#
+RUN yum -y install wget
+COPY --chown=root:root --chmod=0755 download-srpm find-latest-srpm get-dist /usr/local/bin/
+
+#
 # Download the requisite SRPMs
 #
 WORKDIR /root/rpmbuild
-RUN yum -y install wget
-# First try the main repository
-ENV REPO="https://dl.rockylinux.org/pub/rocky/${BASE_VER}/BaseOS/source/tree/Packages"
-RUN wget --recursive --level 2 --no-parent --no-directories "${REPO}" --directory-prefix=. --accept "samba-*.src.rpm" --accept "libldb-*.src.rpm" || true
-# Now try the vault repository
-ENV REPO="https://dl.rockylinux.org/vault/rocky/${BASE_VER}/BaseOS/source/tree/Packages"
-RUN wget --recursive --level 2 --no-parent --no-directories "${REPO}" --directory-prefix=. --accept "samba-*.src.rpm" --accept "libldb-*.src.rpm" || true
-ENV REPO=""
-COPY find-latest-srpm .
-COPY get-dist .
-
+RUN download-srpm "${BASE_VER}/BaseOS" "samba-*.src.rpm" "libldb-*.src.rpm"
+RUN download-srpm "${UPSTREAM_VER}/BaseOS" "krb5-*.src.rpm"
+RUN download-srpm "${UPSTREAM_VER}/AppStream" "python-pyasn1-*.src.rpm"
 #
-# We have the RPMs available, now find the latest ones and build them
+# We have the RPMs we need, now find the latest ones and build them
 #
 
 #
 # Build the one missing build dependency - python3-ldb-devel
 #
-RUN LIBLDB_SRPM="$( ./find-latest-srpm libldb-*.src.rpm )" && \
+RUN LIBLDB_SRPM="$( find-latest-srpm libldb-*.src.rpm )" && \
     if [ -z "${LIBLDB_SRPM}" ] ; then echo "No libldb SRPM was found" ; exit 1 ; fi && \
     yum-builddep -y "${LIBLDB_SRPM}" && \
     rpmbuild --clean --rebuild "${LIBLDB_SRPM}"
@@ -84,30 +85,37 @@ RUN ln -svf $(readlink -f RPMS) /rpm
 RUN yum -y install python3-ldb python3-ldb-devel
 
 #
+# First things first - which dist is this for?
+#
+ENV DIST_STR="/.dist"
+RUN SAMBA_SRPM="$( find-latest-srpm samba-*.src.rpm )" && \
+    if [ -z "${SAMBA_SRPM}" ] ; then echo "No Samba SRPM was found" ; exit 1 ; fi && \
+    DIST="$(get-dist "${SAMBA_SRPM}")" && \
+    if [ -z "${DIST}" ] ; then echo "Failed to identify the distribution for the SRPM [${SAMBA_SRPM}]" ; exit 1 ; fi && \
+    echo -n "${DIST}" > "${DIST_STR}"
+
+#
 # Need an updated python3-pyasn1
 #
-ENV PY_ASN_SRPM="python-pyasn1-0.4.8-6.el9.src.rpm"
-ENV PY_ASN_SRC="https://dl.rockylinux.org/pub/rocky/9/AppStream/source/tree/Packages/p/${PY_ASN_SRPM}"
-RUN curl -fsSL -o "${PY_ASN_SRPM}" "${PY_ASN_SRC}" && \
-    yum-builddep -y "${PY_ASN_SRPM}" && \
-    DIST="el8" && \
-    rpmbuild --clean --define "dist .${DIST}" --rebuild "${PY_ASN_SRPM}"
+RUN PYASN1_SRPM="$( find-latest-srpm python-pyasn1-*.src.rpm )" && \
+    if [ -z "${PYASN1_SRPM}" ] ; then echo "No python-pyasn1 SRPM was found" ; exit 1 ; fi && \
+    DIST="$( cat "${DIST_STR}" )" && \
+    yum-builddep -y "${PYASN1_SRPM}" && \
+    rpmbuild --clean --define "dist .${DIST}" --rebuild "${PYASN1_SRPM}"
 
 #
 # Need an updated krb5
 #
-ENV KRB5_SRPM="krb5-1.21.1-8.el9_6.src.rpm"
-ENV KRB5_SRC="https://dl.rockylinux.org/pub/rocky/9/BaseOS/source/tree/Packages/k/${KRB5_SRPM}"
-RUN curl -fsSL -o "${KRB5_SRPM}" "${KRB5_SRC}" && \
+RUN KRB5_SRPM="$( find-latest-srpm krb5-*.src.rpm )" && \
+    if [ -z "${KRB5_SRPM}" ] ; then echo "No krb5 SRPM was found" ; exit 1 ; fi && \
+    DIST="$( cat "${DIST_STR}" )" && \
     yum-builddep -y "${KRB5_SRPM}" && \
-    DIST="el8" && \
     rpmbuild --clean --define "dist .${DIST}" --rebuild "${KRB5_SRPM}"
 
 #
 # Build Samba now
 #
-RUN SAMBA_SRPM="$( ./find-latest-srpm samba-*.src.rpm )" && \
-    if [ -z "${SAMBA_SRPM}" ] ; then echo "No Samba SRPM was found" ; exit 1 ; fi && \
+RUN SAMBA_SRPM="$( find-latest-srpm samba-*.src.rpm )" && \
     yum-builddep -y "${SAMBA_SRPM}" && \
     yum -y install \
         bind \
@@ -116,14 +124,13 @@ RUN SAMBA_SRPM="$( ./find-latest-srpm samba-*.src.rpm )" && \
         python3-cryptography \
         python3-iso8601 \
         python3-markdown \
-        ./RPMS/noarch/python3-pyasn1-0.4.8-6.el8.noarch.rpm \
-        ./RPMS/noarch/python3-pyasn1-modules-0.4.8-6.el8.noarch.rpm \
+        python3-pyasn1 \
+        python3-pyasn1-modules \
         python3-setproctitle \
         tdb-tools \
       && \
-    DIST="$( ./get-dist "${SAMBA_SRPM}" )" && \
-    if [ -z "${DIST}" ] ; then echo "Failed to identify the distribution for the SRPM [${SAMBA_SRPM}]" ; exit 1 ; fi && \
-    rpmbuild --clean --define "dist .${DIST}" --define "${DIST} 1" --with dc --rebuild "${SAMBA_SRPM}"
+    DIST="$( cat "${DIST_STR}" )" && \
+    rpmbuild --clean --define "dist .${DIST}" --define "${DIST} 1" --with dc --rebuild --nodeps "${SAMBA_SRPM}"
 RUN rm -rf RPMS/repodata
 RUN createrepo RPMS
 
